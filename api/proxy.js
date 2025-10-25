@@ -1,46 +1,42 @@
 // /api/proxy.js
-// *** CÓDIGO ATUALIZADO PARA LIDAR COM O CORS (OPTIONS) ***
-
+// *** ATUALIZADO para lidar com OPTIONS (CORS) ***
 import crypto from 'crypto';
 
-// Esta é a função que a Vercel executará
+// Função auxiliar para definir cabeçalhos CORS
+function setCorsHeaders(res) {
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Permite qualquer origem
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tuya-Method, X-Tuya-Path');
+}
+
 export default async function handler(req, res) {
 
-    // --- ETAPA 1: Lidar com a "Pergunta de Permissão" (Preflight OPTIONS) ---
-    // O navegador envia um 'OPTIONS' antes de enviar o 'POST'
+    // --- Responde ao Preflight OPTIONS ---
     if (req.method === 'OPTIONS') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tuya-Path, X-Tuya-Method');
-        return res.status(200).end(); // Responde "OK, eu permito"
+        setCorsHeaders(res); // Define os cabeçalhos de permissão
+        return res.status(204).end(); // Responde 204 No Content (padrão para OPTIONS)
     }
 
-    // --- ETAPA 2: Se não for OPTIONS, é o seu código normal do proxy ---
+    // --- Define cabeçalhos CORS para a resposta real ---
+    setCorsHeaders(res);
 
-    // Define os cabeçalhos de permissão para a resposta REAL
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    // --- 1. Ler dados do seu frontend ---
-    const accessToken = req.headers.authorization?.split(' ')[1]; 
+    // --- Lógica normal do proxy ---
+    const accessToken = req.headers.authorization?.split(' ')[1];
     const tuyaPath = req.headers['x-tuya-path'];
     const tuyaMethod = req.headers['x-tuya-method'] || 'GET';
     const body = req.body;
 
-    // --- 2. Ler segredos do servidor Vercel ---
     const clientId = process.env.TUYA_CLIENT_ID;
     const secretKey = process.env.TUYA_SECRET_KEY;
 
-    // --- 3. Validação ---
     if (!accessToken || !tuyaPath || !clientId || !secretKey) {
-        return res.status(400).json({ 
-            code: 400, 
-            msg: 'Faltando cabeçalhos (Authorization, X-Tuya-Path) ou configuração do servidor.' 
-        });
+        return res.status(400).json({ code: 400, msg: 'Faltando cabeçalhos ou configuração.' });
     }
 
-    // --- 4. Recalcular a Assinatura (para comandos) ---
     const t = Date.now().toString();
-    const bodyString = Object.keys(body).length === 0 ? '' : JSON.stringify(body);
+    // Garante que body seja um objeto antes de verificar as chaves
+    const safeBody = (typeof body === 'object' && body !== null) ? body : {};
+    const bodyString = Object.keys(safeBody).length === 0 ? '' : JSON.stringify(safeBody);
     const bodyHash = crypto.createHash('sha256').update(bodyString).digest('hex');
 
     const headersToSign = "";
@@ -55,9 +51,7 @@ export default async function handler(req, res) {
                        .digest('hex')
                        .toUpperCase();
 
-    // --- 5. Montar a chamada real para a Tuya ---
     const url = `https://openapi.tuyaus.com${tuyaPath}`;
-
     const tuyaHeaders = {
         'client_id': clientId,
         'access_token': accessToken,
@@ -67,7 +61,6 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
     };
 
-    // --- 6. Fazer a chamada e retornar ---
     try {
         const response = await fetch(url, {
             method: tuyaMethod,
@@ -75,6 +68,7 @@ export default async function handler(req, res) {
             body: bodyString === '' ? null : bodyString
         });
         const data = await response.json();
+        // Retorna o status original da Tuya
         res.status(response.status).json(data);
     } catch (error) {
         res.status(500).json({ code: 500, msg: 'Erro interno do proxy', error: error.message });
