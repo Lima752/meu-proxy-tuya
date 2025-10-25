@@ -1,20 +1,47 @@
 // /pages/index.js
-// --- CÓDIGO REVISADO (v7) ---
-// Garantindo a sintaxe correta
+// --- CÓDIGO ATUALIZADO (v8) ---
+// Redesenha a UI para se parecer com o Nexxto, adiciona Chart.js
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+// Importações para o Chart.js
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  TimeScale, // Importa TimeScale
+} from 'chart.js';
+import 'chartjs-adapter-date-fns'; // Importa o adaptador de data
+
+// Registra os componentes do Chart.js
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  TimeScale // Registra TimeScale
+);
 
 /** ========= CONFIG ========= */
 const DEVICES = [
-  { id: "eb4834395c8fbc4dfefpe9", name: "Sala-CW" },
-  { id: "eb13a02df36c15cc0czqmm", name: "Sala Cirúrgica 3-2SS" },
-  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 2-DAY" },
-  // Adicione mais dispositivos aqui se precisar, copiando o formato { id: "...", name: "..." },
+  { id: "eb798cab6fd0612ab95jwc", name: "Sala-T5" },
+  { id: "eb4834395c8fbc4dfefpe9", name: "Sala-T4" },
+  { id: "eb13a02df36c15cc0czqmm", name: "Sala-T3" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala-T2" },
+  // Adicione mais dispositivos aqui se precisar
 ];
 
 const DEFAULT_REFRESH_SECONDS = 300; // 5 minutos
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
-const HISTORY_MAX_POINTS = 480;      // segurança
+const HISTORY_MAX_POINTS = 288; // (24h * 60min / 5min por ponto)
 
 /** ========= HELPERS (LÓGICA - NÃO MEXER) ========= */
 function parseFunctionValues(valuesStr) {
@@ -43,42 +70,31 @@ async function getAccessToken() {
   throw new Error(j?.msg || "Falha ao obter access_token");
 }
 async function tuyaProxy({ token, tuyaPath, method = "GET", body = {} }) {
-  // ADICIONANDO REGRAS DE CORS AQUI (já que removemos o vercel.json)
-  const responseHeaders = {
-    'Access-Control-Allow-Origin': '*', // Permite qualquer origem
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tuya-Method, X-Tuya-Path',
-  };
-
-  // Responde ao Preflight OPTIONS
-  if (method === 'OPTIONS_PREFLIGHT_FOR_PROXY') {
-      // Nota: Esta condição especial nunca será acionada pelo fetch normal,
-      // mas o código do handler em /api/proxy PRECISA ser atualizado
-      // para lidar com o método OPTIONS real.
-      // Esta função tuyaProxy agora retorna os headers CORS.
-      return { status: 200, data: {}, headers: responseHeaders };
-  }
-
   const r = await fetch("/api/proxy", {
-    method: "POST", // A chamada para o proxy é sempre POST
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      "X-Tuya-Method": method, // O método real para a Tuya
+      "X-Tuya-Method": method,
       "X-Tuya-Path": tuyaPath,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body ?? {}),
   });
   const j = await r.json();
-
-  // Adiciona cabeçalhos CORS à resposta final
-  const finalHeaders = { ...responseHeaders };
-  // Copia outros cabeçalhos relevantes se necessário (ex: Content-Type)
+  // Adiciona cabeçalhos CORS na resposta do proxy para o navegador
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Tuya-Method, X-Tuya-Path',
+  };
+  // Se a resposta original tiver um Content-Type, preserva-o
   if (r.headers.has('content-type')) {
-      finalHeaders['Content-Type'] = r.headers.get('content-type');
+    headers['Content-Type'] = r.headers.get('content-type');
   }
 
-  return { status: r.status, data: j, headers: finalHeaders };
+  // Retorna os dados E os cabeçalhos (embora o fetch do browser ignore os headers daqui)
+  // A correção real do CORS precisa estar nos arquivos /api/*.js
+  return { status: r.status, data: j };
 }
 function prefer(keys, statusArr) {
   const map = new Map((statusArr || []).map((s) => [s.code, s.value]));
@@ -103,212 +119,141 @@ function saveHistory(deviceId, arr) {
   try { localStorage.setItem(`history:${deviceId}`, JSON.stringify(arr)); } catch {}
 }
 
-/** ========= ESTILOS (CSS-in-JS) ========= */
+/** ========= ESTILOS (Inspirado no Nexxto) ========= */
 const styles = {
   page: {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    backgroundColor: "#f0f2f5",
+    backgroundColor: "#f0f2f5", // Fundo cinza claro
     margin: 0,
-    padding: "20px",
+    padding: "10px", // Menos padding
     minHeight: "100vh",
   },
   header: {
-    textAlign: "center",
-    color: "#1c1e21",
-    width: "100%",
-    marginBottom: "20px"
+    backgroundColor: "#2a7ae2", // Azul Nexxto (aproximado)
+    color: "white",
+    padding: "10px 15px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "15px",
+    borderRadius: "8px",
+  },
+  headerTitle: {
+      fontSize: "1.2rem",
+      fontWeight: 600,
   },
   container: {
-    display: "flex",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: "20px",
-    maxWidth: 1400,
+    display: "grid", // Usar grid para melhor controle
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", // Responsivo
+    gap: "15px",
+    maxWidth: 1600, // Aumentar largura máxima
     margin: "0 auto",
   },
   card: {
     backgroundColor: "white",
     borderRadius: "8px",
-    boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
-    padding: "20px",
-    minWidth: "260px",
-    textAlign: "center",
-    transition: "transform 0.2s, opacity 0.2s",
+    boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
+    padding: "15px",
+    display: "flex",
+    flexDirection: "column",
+    transition: "opacity 0.2s",
     opacity: 1,
   },
   cardOffline: {
     opacity: 0.6,
   },
+  cardHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: '10px',
+  },
   cardTitle: {
-    marginTop: 0,
-    color: "#05386b",
-    fontSize: "1.5em",
-    fontWeight: 600,
-    marginBottom: "20px",
-  },
-  data: {
-    display: "flex",
-    justifyContent: "space-around",
-    alignItems: "center",
-    margin: "20px 0",
     color: "#333",
-    flexWrap: "wrap",
-    gap: "16px",
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    margin: 0,
   },
-  dataPoint: {
-    fontSize: "2em",
+  cardSubTitle: {
+      fontSize: '0.8rem',
+      color: '#777',
+      marginTop: '2px',
   },
-  dataUnit: {
-    fontSize: "0.5em",
-    color: "#666",
-    verticalAlign: "super",
+  onlineIndicator: {
+      fontSize: '1.5rem', // Tamanho do ícone
+      color: '#4CAF50', // Verde para online
   },
-  battery: {
-    fontSize: "1em",
+  offlineIndicator: {
+      fontSize: '1.5rem',
+      color: '#aaa', // Cinza para offline
+  },
+  tempDisplay: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center', // Centraliza temperatura
+    gap: '10px',
+    margin: "15px 0",
+    color: "#1c1e21", // Cor escura para temp
+  },
+  tempIcon: {
+      fontSize: '2.5rem', // Ícone maior
+      color: '#2a7ae2', // Azul
+  },
+  tempValue: {
+    fontSize: "3rem", // Temperatura bem grande
+    fontWeight: 700,
+  },
+  tempUnit: {
+    fontSize: "1.5rem",
     color: "#555",
+    alignSelf: 'flex-start', // Alinha °C no topo
+    marginTop: '0.5rem',
+  },
+  chartContainer: {
     marginTop: "15px",
+    height: "150px", // Altura fixa para o gráfico
+    position: 'relative', // Necessário para Chart.js responsivo
   },
   statusBanner: {
-    marginTop: "15px",
-    padding: "10px",
+    marginTop: "auto", // Empurra para baixo
+    padding: "8px",
     borderRadius: "5px",
     color: "white",
     fontWeight: "bold",
+    textAlign: "center",
+    fontSize: "0.9rem",
   },
-  statusLoading: {
-    background: "#ff9800", // Laranja
-  },
-  statusOk: {
-    background: "#4CAF50", // Verde
-  },
-  statusError: {
-    background: "#f44336", // Vermelho
-  },
+  statusLoading: { background: "#ff9800" },
+  statusOk: { background: "#4CAF50" },
+  statusError: { background: "#f44336" },
   globalError: {
     color: "#f44336",
     fontWeight: "bold",
     marginTop: 20,
-    minHeight: 20,
+    padding: "10px",
+    background: "#FFEBEE",
+    border: "1px solid #FFCDD2",
+    borderRadius: "8px",
     textAlign: "center",
-    width: "100%",
+    width: "calc(100% - 40px)",
+    margin: "0 auto 20px auto",
   },
 };
 
-/** ========= COMPONENTE DE GRÁFICO ========= */
-function Sparkline({ values = [], stroke = "#0ea5e9", width = 220, height = 48 }) {
-  const W = width, H = height, P = 6;
-  if (!values.length || values.length < 2) return (
-    <div style={{ height: H, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: 14, background: '#fafafa', borderRadius: 8 }}>
-      Sem dados de histórico suficientes
-    </div>
-  );
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const rng = max - min || 1;
-  const step = (W - P * 2) / Math.max(1, values.length - 1);
-  const points = values.map((v, i) => {
-    const x = P + i * step;
-    const y = P + (H - P * 2) * (1 - (v - min) / rng);
-    return `${x},${y}`;
-  });
-  return (
-    <svg width={W} height={H} style={{ display: "block", margin: '0 auto' }}>
-      <polyline fill="none" stroke={stroke} strokeWidth={2} points={points.join(" ")} />
-    </svg>
-  );
-}
-
-/** ========= COMPONENTE DO MODAL ========= */
-function HistoryModal({ device, historyData, onClose }) {
-  const modalOverlay = {
-    position: 'fixed',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  };
-  const modalContent = {
-    background: 'white',
-    padding: '24px',
-    borderRadius: '12px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-    minWidth: '500px',
-    maxWidth: '90%',
-  };
-  const modalHeader = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '12px',
-    marginBottom: '20px',
-  };
-  const modalTitle = {
-    fontSize: '1.25rem',
-    fontWeight: 600,
-    color: '#111',
-  };
-  const closeButton = {
-    background: '#eee',
-    border: 'none',
-    borderRadius: '50%',
-    width: '32px',
-    height: '32px',
-    cursor: 'pointer',
-    fontSize: '18px',
-    lineHeight: '30px',
-    textAlign: 'center',
-  };
-  const chartLabel = {
-    fontSize: '0.9rem',
-    color: '#555',
-    marginBottom: '8px',
-  };
-
-  const tempSeries = historyData.map(p => (typeof p.temp === "number" ? p.temp : null)).filter(x => x !== null);
-  const humSeries  = historyData.map(p => (typeof p.hum  === "number" ? p.hum  : null)).filter(x => x !== null);
-
-  return (
-    <div style={modalOverlay} onClick={onClose}>
-      <div style={modalContent} onClick={(e) => e.stopPropagation()}>
-        <div style={modalHeader}>
-          <div style={modalTitle}>Histórico 24h: {device.name}</div>
-          <button style={closeButton} onClick={onClose}>&times;</button>
-        </div>
-
-        <div style={chartLabel}>Temperatura (°C) - (Últimas 24h)</div>
-        <Sparkline values={tempSeries} stroke="#0ea5e9" width={450} height={80} />
-
-        <div style={{...chartLabel, marginTop: '20px'}}>Umidade (%) - (Últimas 24h)</div>
-        <Sparkline values={humSeries} stroke="#10b981" width={450} height={80} />
-      </div>
-    </div>
-  );
-}
-
-/** ========= COMPONENTE DO CARD ========= */
-function DeviceCard({ devMeta, onTempClick }) {
-  const {
-    tVal, hVal, bVal,
-    tempAlert, humAlert, lowBattery
-  } = devMeta.metrics;
+/** ========= COMPONENTE DO CARD (Redesenhado) ========= */
+function DeviceCard({ devMeta, historyData }) {
+  const { tVal, hVal, bVal } = devMeta.metrics; // Removemos alertas por simplicidade no layout
 
   const isLoading = devMeta.loading;
   const isOffline = devMeta.online === false;
-  const isError = !devMeta.ok || isOffline;
-  const hasAlert = !isError && (tempAlert || humAlert || lowBattery);
+  const isError = !devMeta.ok || isOffline; // Erro = Falha na API OU Offline
 
   let statusText = "A carregar...";
   let statusStyle = {...styles.statusBanner, ...styles.statusLoading};
 
   if (!isLoading) {
     if (isError) {
-      statusText = isOffline ? "Status: Offline" : "Status: Erro";
-      statusStyle = {...styles.statusBanner, ...styles.statusError};
-    } else if (hasAlert) {
-      statusText = "Status: Alerta";
+      statusText = isOffline ? "Status: Offline" : `Erro: ${devMeta.err || 'Desconhecido'}`;
       statusStyle = {...styles.statusBanner, ...styles.statusError};
     } else {
       statusText = "Status: OK";
@@ -317,43 +262,127 @@ function DeviceCard({ devMeta, onTempClick }) {
   }
 
   const tempStr = isLoading ? "--" : (typeof tVal === "number" ? tVal.toFixed(1) : "--");
-  const humStr = isLoading ? "--" : (typeof hVal === "number" ? hVal.toFixed(0) : "--");
-  const batStr = isLoading ? "--" : (typeof bVal === "number" ? bVal : "--");
+  // const humStr = isLoading ? "--" : (typeof hVal === "number" ? hVal.toFixed(0) : "--"); // Não exibido
+  // const batStr = isLoading ? "--" : (typeof bVal === "number" ? bVal : "--"); // Não exibido
 
   let cardStyle = {...styles.card};
   if (isOffline) {
     cardStyle = {...cardStyle, ...styles.cardOffline};
   }
 
+  // --- Prepara dados para o gráfico ---
+  const chartData = useMemo(() => {
+      const labels = (historyData || []).map(p => p.t); // Usa timestamps como labels
+      const tempData = (historyData || []).map(p => p.temp);
+      // const humData = (historyData || []).map(p => p.hum); // Se quiser adicionar umidade
+
+      return {
+          labels: labels,
+          datasets: [
+              {
+                  label: 'Temperatura (°C)',
+                  data: tempData,
+                  borderColor: '#2a7ae2', // Azul
+                  backgroundColor: 'rgba(42, 122, 226, 0.1)',
+                  tension: 0.1, // Linha suave
+                  pointRadius: 0, // Esconde pontos individuais
+                  fill: true, // Preenche a área abaixo da linha
+              },
+              // { // Se quiser adicionar umidade
+              //     label: 'Umidade (%)',
+              //     data: humData,
+              //     borderColor: '#10b981', // Verde
+              //     backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              //     tension: 0.1,
+              //     pointRadius: 0,
+              //     fill: true,
+              //     yAxisID: 'y1', // Para usar um eixo Y secundário
+              // },
+          ],
+      };
+  }, [historyData]);
+
+  // --- Configurações do gráfico ---
+  const chartOptions = useMemo(() => ({
+      responsive: true,
+      maintainAspectRatio: false, // Permite controlar a altura pelo container
+      plugins: {
+          legend: { display: false }, // Esconde a legenda
+          tooltip: { enabled: true }, // Mostra tooltip ao passar o mouse
+      },
+      scales: {
+          x: {
+              type: 'time', // Eixo X é baseado em tempo
+              time: {
+                  unit: 'hour', // Unidade de exibição
+                  tooltipFormat: 'dd/MM HH:mm', // Formato no tooltip
+                  displayFormats: {
+                      hour: 'HH:mm' // Formato no eixo X
+                  }
+              },
+              ticks: { maxTicksLimit: 6 }, // Limita número de labels no eixo X
+              grid: { display: false }, // Esconde grid vertical
+          },
+          y: { // Eixo Y principal (Temperatura)
+              beginAtZero: false,
+              grid: { color: '#eee' }, // Grid horizontal suave
+              position: 'left',
+          },
+          // y1: { // Eixo Y secundário (Umidade) - descomentar se usar
+          //     beginAtZero: false,
+          //     grid: { display: false },
+          //     position: 'right',
+          //     ticks: { callback: value => `${value}%` }
+          // },
+      },
+      interaction: {
+        intersect: false,
+        mode: 'index',
+      },
+  }), []);
+
   return (
     <div style={cardStyle}>
-      <h2 style={styles.cardTitle}>{devMeta.name}</h2>
-      <div style={styles.data}>
-        <div
-          style={{...styles.dataPoint, cursor: 'pointer'}}
-          onClick={onTempClick}
-          title="Ver histórico 24h"
-        >
-          {tempStr}<span style={styles.dataUnit}>°C</span>
-        </div>
-        <div style={styles.dataPoint}>
-          {humStr}<span style={styles.dataUnit}>%</span>
-        </div>
+      <div style={styles.cardHeader}>
+          <div>
+              <h2 style={styles.cardTitle}>{devMeta.name}</h2>
+              <div style={styles.cardSubTitle}>{devMeta.id}</div>
+          </div>
+          {/* Indicador Online/Offline (parecido com ícone de sinal) */}
+          <div style={isOffline ? styles.offlineIndicator : styles.onlineIndicator}>
+              {/* Usando um caractere unicode simples para simular sinal */}
+              {isOffline ? '○' : '📶'}
+          </div>
       </div>
-      <div style={styles.battery}>🔋 {batStr}%</div>
+
+      <div style={styles.tempDisplay}>
+        <span style={styles.tempIcon}>🌡️</span> {/* Ícone de termômetro */}
+        <span style={styles.tempValue}>{tempStr}</span>
+        <span style={styles.tempUnit}>°C</span>
+      </div>
+
+      {/* Container do Gráfico */}
+      <div style={styles.chartContainer}>
+        {isLoading || !historyData || historyData.length < 2 ? (
+            <div style={{ color: '#aaa', textAlign: 'center', paddingTop: '50px' }}>
+                {isLoading ? 'Carregando histórico...' : 'Aguardando dados de histórico...'}
+            </div>
+        ) : (
+            <Line options={chartOptions} data={chartData} />
+        )}
+      </div>
+
       <div style={statusStyle}>{statusText}</div>
     </div>
   );
 }
 
-/** ========= PÁGINA PRINCIPAL ========= */
+/** ========= PÁGINA PRINCIPAL (Redesenhada) ========= */
 export default function TuyaMultiEnvDashboard() {
   const [token, setToken] = useState(null);
   const [refreshSec, setRefreshSec] = useState(DEFAULT_REFRESH_SECONDS);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState(null);
-
-  const [modalDevice, setModalDevice] = useState(null);
 
   const [items, setItems] = useState(() =>
     DEVICES.map((d) => ({
@@ -410,19 +439,21 @@ export default function TuyaMultiEnvDashboard() {
         tuyaPath: `/v1.0/devices/${deviceId}/status`,
       }));
     }
-    if (!s?.success) throw new Error(s?.msg || "Falha ao obter status");
+    if (!s?.success) throw new Error(s?.msg || `Falha status ${deviceId}`);
 
-    // functions
+    // functions (necessário para escala)
     const { data: f } = await tuyaProxy({
       token: token || (await ensureToken()),
       tuyaPath: `/v1.0/devices/${deviceId}/functions`,
     });
+    if (!f?.success) console.warn(`Falha functions ${deviceId}: ${f?.msg}`); // Não crítico
 
     // info (online/offline)
     const { data: info } = await tuyaProxy({
       token: token || (await ensureToken()),
       tuyaPath: `/v1.0/devices/${deviceId}`,
     });
+     if (!info?.success) console.warn(`Falha info ${deviceId}: ${info?.msg}`); // Não crítico
 
     return {
       status: Array.isArray(s.result) ? s.result : [],
@@ -432,7 +463,9 @@ export default function TuyaMultiEnvDashboard() {
   }
 
   async function loadAll() {
-    setError("");
+    setError(""); // Limpa erro global antes de tentar
+    setItems(prev => prev.map(item => ({...item, loading: true}))); // Define loading para todos
+
     try {
       const tk = await ensureToken();
       const results = await Promise.all(
@@ -444,6 +477,7 @@ export default function TuyaMultiEnvDashboard() {
             const r = await fetchOne(d.id, tk);
             return { id: d.id, ok: true, name: d.name, ...r };
           } catch (e) {
+            console.error(`Erro ao buscar ${d.name}:`, e); // Loga erro específico
             return { id: d.id, ok: false, err: e?.message || String(e), name: d.name };
           }
         })
@@ -452,14 +486,14 @@ export default function TuyaMultiEnvDashboard() {
       setItems((prev) =>
         prev.map((p) => {
           const found = results.find((r) => r.id === p.id);
-          if (!found) return { ...p, name: p.name || `Device ${p.id}` }; // Ensure name exists
+          if (!found) return { ...p, name: p.name || `Device ${p.id}` };
           return {
             ...p,
-            name: found.name || `Device ${p.id}`, // Ensure name exists
+            name: found.name || `Device ${p.id}`,
             status: found.status || [],
             functions: found.functions || null,
             online: found.online,
-            loading: false,
+            loading: false, // Loading termina aqui
             ok: !!found.ok,
             err: found.err || "",
           };
@@ -483,40 +517,47 @@ export default function TuyaMultiEnvDashboard() {
           let tVal = tSel ? scaleNormalize(tSel.value, tMeta) : null;
           let hVal = hSel ? scaleNormalize(hSel.value, hMeta) : null;
 
-          if (tSel && (tSel.code === 'va_temperature' || tSel.code === 'temp_current') && tVal === tSel.value && Math.abs(tVal) > 100) {
+          if (tSel && (tSel.code === 'va_temperature' || tSel.code === 'temp_current') && tVal === tSel.value && typeof tVal === 'number' && Math.abs(tVal) > 100) {
              tVal = tVal / 10.0;
           }
 
           if (typeof tVal === "number" || typeof hVal === "number") {
+            // Apenas adiciona ao histórico se os valores forem válidos
             pushHistory(res.id, { t: now, temp: typeof tVal === "number" ? tVal : null, hum: typeof hVal === "number" ? hVal : null });
           }
       });
 
       setLastUpdated(new Date());
     } catch (e) {
+      console.error("Erro global ao carregar dados:", e); // Loga erro global
       setError(String(e));
+       setItems(prev => prev.map(item => ({...item, loading: false, ok: false, err: String(e) }))); // Garante que loading termine em erro global
     }
   }
 
   useEffect(() => {
-    loadAll();
+    loadAll(); // Carga inicial
     return () => timerRef.current && clearInterval(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (refreshSec > 0) timerRef.current = setInterval(loadAll, refreshSec * 1000);
+    if (refreshSec > 0) {
+        timerRef.current = setInterval(loadAll, refreshSec * 1000);
+        console.log(`Auto-refresh definido para ${refreshSec} segundos.`);
+    } else {
+        console.log("Auto-refresh desativado.");
+    }
     return () => timerRef.current && clearInterval(timerRef.current);
-  }, [refreshSec]);
+  }, [refreshSec]); // Depende apenas de refreshSec
 
   // Pré-calcula métricas para todos os itens
   const itemsWithMetrics = useMemo(() => {
     return items.map(devMeta => {
-      // Garante que devMeta.functions existe e é um objeto antes de tentar mapear
       const functionsArray = devMeta.functions?.functions || [];
       const fnMap = new Map(functionsArray.map((f) => [f.code, f]));
-      
+
       const tempPref = ["va_temperature", "temp_current", "temperature", "temp_value", "temp_set"];
       const humPref  = ["va_humidity", "humidity_value", "humidity"];
       const batPref  = ["battery_percentage", "battery_value", "battery_state", "battery"];
@@ -532,7 +573,7 @@ export default function TuyaMultiEnvDashboard() {
       let hVal = hSel ? scaleNormalize(hSel.value, hMeta) : null;
       let bVal = bSel ? bSel.value : null;
 
-      if (tSel && (tSel.code === 'va_temperature' || tSel.code === 'temp_current') && tVal === tSel.value && Math.abs(tVal) > 100) {
+      if (tSel && (tSel.code === 'va_temperature' || tSel.code === 'temp_current') && tVal === tSel.value && typeof tVal === 'number' && Math.abs(tVal) > 100) {
          tVal = tVal / 10.0;
       }
 
@@ -550,31 +591,31 @@ export default function TuyaMultiEnvDashboard() {
     });
   }, [items]);
 
-
   return (
     <div style={styles.page}>
       <div style={styles.header}>
-        <h1 style={{ fontSize: "2.5em", margin: 0 }}> Temperaturas Salas Cirúrgicas HOEB </h1>
-        <div style={{ fontSize: 12, color: "#6b7280" }}>
-          Última atualização: {lastUpdated ? lastUpdated.toLocaleString() : "—"}
-          (Auto-refresh:
+        <span style={styles.headerTitle}>Painel de Monitoramento</span>
+        <div style={{ fontSize: 12 }}>
+          Atualização:
           <select
              value={refreshSec}
              onChange={(e) => setRefreshSec(Number(e.target.value))}
-             style={{ marginLeft: 5, fontSize: 12, border: 'none', background: 'transparent' }}
+             style={{ marginLeft: 5, fontSize: 12, border: 'none', background: 'transparent', color: 'white', cursor: 'pointer' }}
+             title="Intervalo de atualização automática"
           >
-            <option value={0}>Manual</option>
-            <option value={300}>5m</option>
-            <option value={600}>10m</option>
-            <option value={1800}>30m</option>
+            <option value={0} style={{color: 'black'}}>Manual</option>
+            <option value={300} style={{color: 'black'}}>5 min</option>
+            <option value={600} style={{color: 'black'}}>10 min</option>
+            <option value={1800} style={{color: 'black'}}>30 min</option>
           </select>
-          )
-          <button onClick={loadAll} style={{ marginLeft: 10, padding: "4px 8px", fontSize: 12, cursor: 'pointer' }}>Atualizar Agora</button>
+          <button onClick={loadAll} style={{ marginLeft: 10, padding: "4px 8px", fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', borderRadius: 4 }}>
+              Atualizar
+          </button>
         </div>
       </div>
 
       {error && (
-        <p style={styles.globalError}>Erro Global: {error}</p>
+        <p style={styles.globalError}>Erro ao carregar dados: {error}</p>
       )}
 
       <div style={styles.container}>
@@ -582,22 +623,10 @@ export default function TuyaMultiEnvDashboard() {
           <DeviceCard
              key={d.id}
              devMeta={d}
-             onTempClick={() => {
-                 if (!d.id.startsWith("COLE_O_ID_")) { // Só abre se o ID for real
-                     setModalDevice(d);
-                 }
-             }}
+             historyData={history[d.id] || []} // Passa o histórico para o card
           />
         ))}
       </div>
-
-      {modalDevice && (
-        <HistoryModal
-          device={modalDevice}
-          historyData={history[modalDevice.id] || []}
-          onClose={() => setModalDevice(null)}
-        />
-      )}
     </div>
   );
 }
