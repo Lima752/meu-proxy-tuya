@@ -6,9 +6,24 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /** ========= CONFIG ========= */
 const DEVICES = [
-  { id: "eb4834395c8fbc4dfefpe9", name: "Sala-CW" },
-  { id: "eb13a02df36c15cc0czqmm", name: "Sala Cirúrgica 3-2SS" },
-  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 2-DAY" },
+  { id: "eb4834395c8fbc4dfefpe9", name: "Sala Cirúrgica 1-2SS-T1" },
+  { id: "eb13a02df36c15cc0czqmm", name: "Sala Cirúrgica 2-2SS-T2" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 3-2SS-T3" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 4-2SS-T4" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 5-2SS-T5" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 6-2SS-T6" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 7-2SS-T7" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 8-2SS-T8" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 9-2SS-T9" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 10-2SS-T10" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 01-DAY-T11" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 02-DAY-T12" },
+  { id: "eb08f82b6ddb5a1699dced", name: "Sala Cirúrgica 03-DAY-T13" },
+  { id: "eb08f82b6ddb5a1699dced", name: "-T14" },
+  { id: "eb08f82b6ddb5a1699dced", name: "-T15" },
+  { id: "eb08f82b6ddb5a1699dced", name: "-T16" },
+  { id: "eb08f82b6ddb5a1699dced", name: "-T17" },
+  { id: "eb08f82b6ddb5a1699dced", name: "-T18" },
   // Adicione mais dispositivos aqui se precisar, copiando o formato { id: "...", name: "..." },
 ];
 
